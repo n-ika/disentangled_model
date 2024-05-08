@@ -229,14 +229,14 @@ def get_all_d_losses(feats_fg,feats_bg,labels_fg,labels_bg):
     # get D of fg features and true bg labels
     d_fg_bg = self.compute_discriminator(
         feats_fg,#[:num_d3s_samples],
-        labels_bg,
+        labels_bg.repeat(new_batch_num),
         self.fg_discriminator,
         self.fg_label_matrix,
     )
     # shuffled labels D (fake D)
     d_fg_shuffled_bg = self.compute_discriminator(
         feats_fg,#[:num_d3s_samples],
-        self.shuffle(labels_bg),
+        self.shuffle(labels_bg.repeat(new_batch_num)),
         self.fg_discriminator,
         self.fg_label_matrix,
     )
@@ -281,8 +281,6 @@ def get_all_d_losses(feats_fg,feats_bg,labels_fg,labels_bg):
         log_probs = log_probs.permute(1, 0, 2)
         target_lengths = torch.LongTensor([len(targ[0]) for targ in batch['fg_labels']])
     
-    # loss=ctc_loss(log_probs, batch['fg_labels'][:,0,:],input_lengths,target_lengths)        target_lengths = torch.LongTensor([len(targ[0]) for targ in batch['fg_labels']])
-        # num_d3s_samples = batch["bg_labels"].shape[0]
         if self.train_discriminators and not self.pretraining:
             # batch is of size X, while we have Y num frames per input
             # Ds have to take in frame by frame, so we batch again, but smaller
@@ -293,9 +291,10 @@ def get_all_d_losses(feats_fg,feats_bg,labels_fg,labels_bg):
             num_iterations = batch_size*batch_num_frames // new_batch_num
             frames_remaining = num_iterations * new_batch_num
             batch_num = 0
+            fg_result = []
+            bg_result = []
             while frames_remaining != 0:
                 frames_batch = 0
-                result = []
                 for i in range(batch_num_frames//new_batch_num):
                     feats_fg = fg_features[batch_num,frames_batch:frames_batch+new_batch_num,:]
                     feats_bg = bg_features[batch_num,frames_batch:frames_batch+new_batch_num,:]
@@ -305,9 +304,11 @@ def get_all_d_losses(feats_fg,feats_bg,labels_fg,labels_bg):
                     frames_batch += new_batch_num
                     batch_num += 1
 
-                    result.append(get_d_losses(feats_fg,feats_bg,labels_fg,labels_bg))
-                    
-                    # return 
+                    losses = get_d_losses(feats_fg,feats_bg,labels_fg,labels_bg)
+                    fg_result.append(losses[0])
+                    bg_result.append(losses[1])
+
+            return(torch.mean(fg_result),torch.mean(bg_result))
             
         else:
             self.model_optimizer.zero_grad()
@@ -319,6 +320,8 @@ def get_all_d_losses(feats_fg,feats_bg,labels_fg,labels_bg):
                 num_iterations = batch_size*batch_num_frames // new_batch_num
                 frames_remaining = num_iterations * new_batch_num
                 batch_num = 0
+                fg_result = []
+                bg_result = []
                 while frames_remaining != 0:
                     frames_batch = 0
                     for i in range(batch_num_frames//new_batch_num):
@@ -329,7 +332,9 @@ def get_all_d_losses(feats_fg,feats_bg,labels_fg,labels_bg):
                         frames_remaining -= new_batch_num
                         frames_batch += new_batch_num
                 
-                        
+                        losses = get_d_losses(feats_fg,feats_bg,labels_fg,labels_bg)
+                        fg_result.append(losses[0])
+                        bg_result.append(losses[1])
 
                         batch_num += 1
 
